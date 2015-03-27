@@ -1,0 +1,112 @@
+/**
+ ** @author Abhishek
+ ** @created Feb/2013
+ **
+ ** This helper class sends mail for the testimonial topic to certain user when any topic assignment on case is created
+**/
+public class TopicAssignmentTriggerHandler {
+
+    
+    public void sendEmailForTestimonial(List<TopicAssignment> topicAssignmentListNew) {
+    
+        Map<Id, Topic> testimonialTopicIdsMappedTo = new Map<Id, Topic>([select Id,Name from Topic where (Name='Testimonial Feedback' OR Name='Author Feedback' OR Name='Course Feedback' OR Name='General Feedback' OR Name='Course Request' OR Name='Feature Request')]);        
+
+        //Create a master list to hold the emails we'll send
+        List<Messaging.SingleEmailMessage> mails =  new List<Messaging.SingleEmailMessage>();
+        Map<Id, Id> caseIdMappedToContactId = new Map<Id, Id>();
+        Map<Id, Id> caseIdMappedWithTopicAssignmentId = new Map<Id, Id>();
+        Map<Id, Contact> contactIdMappedToRecord = new Map<Id, Contact>();
+        Set<ID> caseIdSet = new Set<ID>();
+
+       
+        
+        if(testimonialTopicIdsMappedTo.size() > 0 ) {
+            for(TopicAssignment topicAssignment :topicAssignmentListNew){
+                if(testimonialTopicIdsMappedTo.Keyset().contains(topicAssignment.TopicId) && topicAssignment.EntityKeyPrefix=='500') {
+                     caseIdSet.add(topicAssignment.EntityId);
+                     if(caseIdMappedWithTopicAssignmentId.keyset() != null && !caseIdMappedWithTopicAssignmentId.keyset().contains(topicAssignment.EntityId)) {
+                         caseIdMappedWithTopicAssignmentId.put(topicAssignment.EntityId,topicAssignment.TopicId);
+                     }                     
+                }    
+            }  
+        }
+        
+        for(case caseRecordForContact : [select contactId, Id from case where ID In:caseIdSet and contactId != null]) {
+            caseIdMappedToContactId.put(caseRecordForContact.Id, caseRecordForContact.ContactId); 
+        }
+        
+        for(Contact contactRecord: [select Id, Name, Email from contact where Id In:caseIdMappedToContactId.values()]) {
+            contactIdMappedToRecord.put(contactRecord.Id,contactRecord); 
+        }
+        
+        for(Case caseRecord : [select Id, CaseNumber,Description,Subject,ContactId from Case where Id IN:caseIdSet]) {
+            contact contactRec = contactIdMappedToRecord.get(caseRecord.ContactId);
+           Id TopicId = caseIdMappedWithTopicAssignmentId.get(caseRecord.Id);
+           Topic TopicRecord = testimonialTopicIdsMappedTo.get(TopicId);
+            Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();    
+            String caselink = System.URL.getSalesforceBaseUrl().toExternalForm() +'/' +caseRecord.id;
+            //Set list of people who should get the email
+            List<String> sendTo = new List<String>();
+            List<Topic_Assignment_EmailIds__c> emailIdRecordList= Topic_Assignment_EmailIds__c.getall().values();
+            
+            for(Topic_Assignment_EmailIds__c emailId : emailIdRecordList) {
+                sendTo.add(emailId.name);
+            }
+            
+            if(TopicRecord.Name.Contains('Testimonial')){            
+                 List<Testimonial_Topic_Assignment_EmailId__c> testimonialEmailIdRecordList= Testimonial_Topic_Assignment_EmailId__c.getall().values();
+                 for(Testimonial_Topic_Assignment_EmailId__c emailId : testimonialEmailIdRecordList) {
+                    sendTo.add(emailId.name);
+                 }
+            }
+            
+                        
+            mail.setToAddresses(sendTo);
+    
+            //Set email contents - you can use variables!
+            mail.setSubject(''+ TopicRecord.Name +' Topic Added To Case Number ' + caseRecord.CaseNumber + '');
+            
+            String body = 'Hi ,' + '<br/><br/>';
+            
+            body += 'Case topic has been added to the following case.';
+            
+            body += '<br/><br/>&nbsp;&nbsp;&nbsp;&nbsp;Topic Name : ' + TopicRecord.Name + '<br/>'+'<br/>';
+            
+            body += '&nbsp;&nbsp;&nbsp;&nbsp;Case Number : ' + caseRecord.CaseNumber + '<br/>'+'<br/>';
+            
+            if(contactRec != null) {
+            
+                body += '&nbsp;&nbsp;&nbsp;&nbsp;Case Contact Name : ' + (contactRec.Name==null?'':contactRec.Name) + '<br/>'+'<br/>';
+                
+                body += '&nbsp;&nbsp;&nbsp;&nbsp;Contact Email Id : ' + (contactRec.Email==null?'':contactRec.Email) + '<br/>'+'<br/>';
+               
+            }
+            else {
+            
+                body += '&nbsp;&nbsp;&nbsp;&nbsp;Case Contact Name : ' + '<br/>'+'<br/>';
+                
+                 
+                body += '&nbsp;&nbsp;&nbsp;&nbsp;Contact Email Id : ' + '<br/>'+'<br/>';
+               
+            }
+            
+          //  body += '&nbsp;&nbsp;&nbsp;&nbsp;Case CaseNumber: ' + (caseRecord.CaseNumber==null?'':caseRecord.CaseNumber) + '<br/>'+'<br/>';
+             
+            body += '&nbsp;&nbsp;&nbsp;&nbsp;Case Subject : ' + (caseRecord.Subject==null?'':caseRecord.Subject) + '<br/>'+'<br/>';
+            
+            body += '&nbsp;&nbsp;&nbsp;&nbsp;<a href="' + caselink  + '">Case Link</a>'  + '<br/>'+'<br/>';
+            
+            body += '&nbsp;&nbsp;&nbsp;&nbsp;Case Description : ' + (caseRecord.Description==null?'':caseRecord.Description) + '</br><br/>';
+            
+            body += 'Thanks,' + '</br>'+'<br/>';
+            
+            body += 'Lynda.com';
+            
+            mail.setHtmlBody(body);
+            //Add your email to the master list
+            mails.add(mail);  
+        }
+        Messaging.sendEmail(mails);
+    }
+    
+}
